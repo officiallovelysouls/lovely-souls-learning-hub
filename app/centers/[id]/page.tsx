@@ -35,6 +35,12 @@ export default async function CenterDetailPage({ params }: PageProps) {
       ? (reviews.reduce((acc, r) => acc + (r.rating || 5), 0) / reviews.length).toFixed(1)
       : null;
 
+  // Clean phone number for WhatsApp link (removes spaces, dashes, leading zero for international format)
+  const rawPhone = center.phone || '0821234567';
+  const waPhone = rawPhone.replace(/\D/g, '').replace(/^0/, '27');
+  const waMessage = encodeURIComponent(`Hi ${center.name}, I am interested in enrolling my child and would like to find out more details.`);
+  const whatsappUrl = `https://wa.me/${waPhone}?text=${waMessage}`;
+
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">
@@ -120,7 +126,7 @@ export default async function CenterDetailPage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* Map & Location Block (Integrated Below Fee Structure) */}
+              {/* Map & Location Block */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
                 <h3 className="text-base font-bold text-slate-900 mb-1">Location & Directions</h3>
                 <p className="text-xs text-slate-500 mb-3 flex items-center gap-1">
@@ -184,8 +190,8 @@ export default async function CenterDetailPage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Right Column: Inquiry Sidebar */}
-            <div>
+            {/* Right Column: Inquiry Sidebar & WhatsApp Contact */}
+            <div className="space-y-6">
               <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl sticky top-6">
                 <h3 className="text-lg font-bold text-slate-900 mb-1">Enquire Now</h3>
                 <p className="text-xs text-slate-500 mb-4">
@@ -230,7 +236,7 @@ export default async function CenterDetailPage({ params }: PageProps) {
                       name="message"
                       rows={3}
                       required
-                      placeholder="Hi, I would like to check availability for my 3-year-old child..."
+                      placeholder="Hi, I would like to check availability for my child..."
                       className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     ></textarea>
                   </div>
@@ -241,6 +247,21 @@ export default async function CenterDetailPage({ params }: PageProps) {
                     Submit Inquiry
                   </button>
                 </form>
+
+                <div className="relative my-6 flex items-center justify-center">
+                  <div className="border-t border-slate-200 w-full"></div>
+                  <span className="bg-slate-50 px-3 text-xs text-slate-400 font-medium absolute">OR</span>
+                </div>
+
+                {/* Direct WhatsApp Quick-Contact Button */}
+                <a
+                  href={whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-lg text-xs transition-colors shadow-sm"
+                >
+                  💬 Chat on WhatsApp
+                </a>
               </div>
             </div>
           </div>
