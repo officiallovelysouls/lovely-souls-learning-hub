@@ -1,240 +1,251 @@
-'use client';
-
-import { useEffect, useState, use } from 'react';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { notFound } from 'next/navigation';
+import Link from 'next/link';
 
-interface Center {
-  id: string;
-  name: string;
-  address: string;
-  phone: string;
-  capacity: number;
-  description: string;
+interface PageProps {
+  params: Promise<{ id: string }>;
 }
 
-export default function CenterDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const centerId = resolvedParams.id;
+export const revalidate = 0;
 
-  const [center, setCenter] = useState<Center | null>(null);
-  const [loading, setLoading] = useState(true);
+export default async function CenterDetailPage({ params }: PageProps) {
+  const { id } = await params;
 
-  // Inquiry Form State
-  const [parentName, setParentName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [message, setMessage] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Fetch Center Details
+  const { data: center, error } = await supabase
+    .from('centers')
+    .select('*')
+    .eq('id', id)
+    .single();
 
-  useEffect(() => {
-    async function fetchCenterDetails() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('centers')
-        .select('*')
-        .eq('id', centerId)
-        .single();
-
-      if (!error && data) {
-        setCenter(data as Center);
-      } else {
-        // Fallback demo center if ID isn't in DB yet
-        setCenter({
-          id: centerId,
-          name: 'Lovely Souls Early Learning Hub',
-          address: '123 Primary Street, Vanderbijlpark, Gauteng',
-          phone: '+27 11 987 6543',
-          capacity: 45,
-          description:
-            'Lovely Souls Early Learning Hub provides a safe, engaging, and structured environment for toddlers and preschoolers. Our curriculum covers literacy, numeracy, creative arts, and foundational motor development with certified staff.',
-        });
-      }
-      setLoading(false);
-    }
-
-    fetchCenterDetails();
-  }, [centerId]);
-
-  const handleSubmitInquiry = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setStatusMessage(null);
-
-    const { error } = await supabase.from('inquiries').insert([
-      {
-        center_id: center?.id,
-        parent_name: parentName,
-        email,
-        phone,
-        message,
-        status: 'pending',
-      },
-    ]);
-
-    setSubmitting(false);
-
-    if (error) {
-      setStatusMessage({ type: 'error', text: 'Failed to submit inquiry. Please try again.' });
-    } else {
-      setStatusMessage({ type: 'success', text: 'Inquiry submitted successfully! The owner will contact you shortly.' });
-      setParentName('');
-      setEmail('');
-      setPhone('');
-      setMessage('');
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-        <Navbar />
-        <div className="py-20 text-center text-slate-500">Loading center details...</div>
-        <Footer />
-      </div>
-    );
+  if (error || !center) {
+    notFound();
   }
 
-  if (!center) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-        <Navbar />
-        <div className="py-20 text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Center Not Found</h2>
-          <Link href="/" className="text-blue-600 hover:underline text-sm">
-            ← Return to Homepage
-          </Link>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+  // Fetch Approved Reviews
+  const { data: reviews } = await supabase
+    .from('reviews')
+    .select('*')
+    .eq('center_id', id)
+    .order('created_at', { ascending: false });
+
+  // Compute Average Rating
+  const avgRating =
+    reviews && reviews.length > 0
+      ? (reviews.reduce((acc, r) => acc + (r.rating || 5), 0) / reviews.length).toFixed(1)
+      : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-      <div>
-        <Navbar />
+    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto">
+        {/* Back Link */}
+        <Link
+          href="/"
+          className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium mb-6"
+        >
+          ← Back to All Centers
+        </Link>
 
-        {/* Back Link Header */}
-        <div className="max-w-7xl mx-auto px-6 pt-6">
-          <Link href="/" className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
-            ← Back to all centers
-          </Link>
-        </div>
+        {/* Main Content Card */}
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          {/* Header Image */}
+          <div className="relative h-72 sm:h-96 w-full bg-slate-200">
+            <img
+              src={center.image_url || 'https://images.unsplash.com/photo-1576495199011-eb94736d05d6?q=80&w=1200'}
+              alt={center.name}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent flex items-end p-6 sm:p-8">
+              <div className="text-white">
+                <span className="inline-block px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-full mb-2 uppercase tracking-wide">
+                  Licensed Daycare
+                </span>
+                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">{center.name}</h1>
+                <p className="text-sm sm:text-base text-slate-200 mt-1 flex items-center gap-1">
+                  📍 {center.address}
+                </p>
+              </div>
+            </div>
+          </div>
 
-        {/* Main Content Layout */}
-        <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Center Info */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-              <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
-                Accredited Hub
-              </span>
-              <h1 className="text-3xl font-extrabold text-slate-900 mt-3 mb-2">{center.name}</h1>
-              <p className="text-sm text-slate-500 mb-6 flex items-center gap-2">
-                📍 {center.address}
-              </p>
+          <div className="p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column: Details & Reviews */}
+            <div className="lg:col-span-2 space-y-8">
+              {/* Ratings Summary */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl font-extrabold text-slate-900">
+                    {avgRating ? avgRating : 'New'}
+                  </span>
+                  <div>
+                    <div className="flex text-amber-400 text-sm">
+                      {'★'.repeat(Math.round(Number(avgRating) || 5))}
+                      {'☆'.repeat(5 - Math.round(Number(avgRating) || 5))}
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {reviews ? `${reviews.length} parent review(s)` : 'No reviews yet'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-md">
+                  Verified Facility
+                </span>
+              </div>
 
-              <div className="grid grid-cols-2 gap-4 border-y border-slate-100 py-4 mb-6">
+              {/* Fee Structure Grid */}
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <p className="text-xs text-slate-400 uppercase font-semibold">Contact Phone</p>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">{center.phone}</p>
+                  <span className="text-xs text-blue-600 font-semibold uppercase tracking-wider">
+                    Monthly Tuition
+                  </span>
+                  <p className="text-2xl font-black text-slate-900 mt-1">
+                    R{center.monthly_fee ?? 2500}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-400 uppercase font-semibold">Student Capacity</p>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">{center.capacity} Children</p>
+                  <span className="text-xs text-blue-600 font-semibold uppercase tracking-wider">
+                    Registration Fee
+                  </span>
+                  <p className="text-2xl font-black text-slate-900 mt-1">
+                    R{center.registration_fee ?? 500}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-xs text-blue-600 font-semibold uppercase tracking-wider">
+                    Age Group
+                  </span>
+                  <p className="text-base font-bold text-slate-900 mt-1">
+                    {center.age_group ?? '18m - 6 yrs'}
+                  </p>
                 </div>
               </div>
 
-              <h2 className="text-lg font-bold text-slate-900 mb-2">About Our Program</h2>
-              <p className="text-slate-600 text-sm leading-relaxed">{center.description}</p>
+              {/* Map & Location Block (Integrated Below Fee Structure) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
+                <h3 className="text-base font-bold text-slate-900 mb-1">Location & Directions</h3>
+                <p className="text-xs text-slate-500 mb-3 flex items-center gap-1">
+                  📍 {center.address}
+                </p>
+                <div className="w-full h-64 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                  <iframe
+                    width="100%"
+                    height="100%"
+                    frameBorder="0"
+                    scrolling="no"
+                    marginHeight={0}
+                    marginWidth={0}
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(center.address)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                    className="w-full h-full border-0"
+                    allowFullScreen
+                  ></iframe>
+                </div>
+                <div className="mt-3 text-right">
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(center.address)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
+                  >
+                    Open in Google Maps →
+                  </a>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 mb-2">About Our Center</h2>
+                <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">
+                  {center.description || 'Welcome to Lovely Souls Learning Hub! We provide a safe, nurturing, and engaging educational environment for young learners.'}
+                </p>
+              </div>
+
+              {/* Reviews Section */}
+              <div className="border-t border-slate-200 pt-8">
+                <h2 className="text-lg font-bold text-slate-900 mb-4">Parent Reviews</h2>
+                {reviews && reviews.length > 0 ? (
+                  <div className="space-y-4">
+                    {reviews.map((rev) => (
+                      <div key={rev.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold text-sm text-slate-900">{rev.parent_name}</span>
+                          <span className="text-amber-400 text-xs">
+                            {'★'.repeat(rev.rating || 5)}{'☆'.repeat(5 - (rev.rating || 5))}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1">{rev.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500 italic">
+                    No reviews yet. Submit an inquiry to get in touch with this center!
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Inquiry Sidebar */}
+            <div>
+              <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl sticky top-6">
+                <h3 className="text-lg font-bold text-slate-900 mb-1">Enquire Now</h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  Send a direct message to the administration to schedule a visit or ask questions.
+                </p>
+
+                <form action="/api/inquire" method="POST" className="space-y-4">
+                  <input type="hidden" name="center_id" value={center.id} />
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                    <input
+                      type="text"
+                      name="parent_name"
+                      required
+                      placeholder="e.g. Sarah Molefe"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      placeholder="sarah@example.com"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Phone Number</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      required
+                      placeholder="082 123 4567"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Message</label>
+                    <textarea
+                      name="message"
+                      rows={3}
+                      required
+                      placeholder="Hi, I would like to check availability for my 3-year-old child..."
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    ></textarea>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-xs transition-colors shadow-sm"
+                  >
+                    Submit Inquiry
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
-
-          {/* Right Column: Inquiry Form Card */}
-          <div className="lg:col-span-1">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-24">
-              <h2 className="text-xl font-bold text-slate-900 mb-1">Inquire for Admission</h2>
-              <p className="text-xs text-slate-500 mb-6">Send a message directly to {center.name}.</p>
-
-              {statusMessage && (
-                <div
-                  className={`p-3 rounded-lg text-xs mb-4 ${
-                    statusMessage.type === 'success'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}
-                >
-                  {statusMessage.text}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmitInquiry} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Parent Name</label>
-                  <input
-                    type="text"
-                    value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-blue-500"
-                    placeholder="Jane Doe"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-blue-500"
-                    placeholder="jane@example.com"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-blue-500"
-                    placeholder="+27 82 123 4567"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Message</label>
-                  <textarea
-                    rows={3}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900 focus:ring-2 focus:ring-blue-500"
-                    placeholder="Inquiring about open spots..."
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 mt-1"
-                >
-                  {submitting ? 'Submitting...' : 'Send Inquiry'}
-                </button>
-              </form>
-            </div>
-          </div>
-        </main>
+        </div>
       </div>
-
-      <Footer />
     </div>
   );
 }
