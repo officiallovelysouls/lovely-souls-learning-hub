@@ -1,9 +1,6 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface Center {
@@ -11,350 +8,224 @@ interface Center {
   name: string;
   address: string;
   phone: string;
-  capacity: number;
   description: string;
-  image_url?: string;
-  monthly_fee?: number;
-  registration_fee?: number;
-  age_group?: string;
+  image_url: string;
+  monthly_fee: number;
+  registration_fee: number;
+  age_group: string;
 }
 
-interface Review {
+interface Inquiry {
   id: string;
   parent_name: string;
-  rating: number;
-  comment: string;
+  email: string;
+  phone: string;
+  message: string;
+  status: string;
   created_at: string;
 }
 
-export default function CenterDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const centerId = resolvedParams.id;
-
+export default function OwnerDashboardPage() {
   const [center, setCenter] = useState<Center | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Inquiry Form State
-  const [parentName, setParentName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
-  const [submittingInquiry, setSubmittingInquiry] = useState(false);
-  const [inquiryStatus, setInquiryStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  // Review Form State
-  const [reviewerName, setReviewerName] = useState('');
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
+    fetchOwnerData();
+  }, []);
 
-      // Fetch Center
-      const { data: centerData } = await supabase
-        .from('centers')
+  async function fetchOwnerData() {
+    setLoading(true);
+
+    // Fetch primary center
+    const { data: centerData } = await supabase
+      .from('centers')
+      .select('*')
+      .limit(1)
+      .single();
+
+    if (centerData) {
+      setCenter(centerData);
+
+      // Fetch inquiries for this center
+      const { data: inquiryData } = await supabase
+        .from('inquiries')
         .select('*')
-        .eq('id', centerId)
-        .single();
-
-      if (centerData) {
-        setCenter(centerData as Center);
-      } else {
-        setCenter({
-          id: centerId,
-          name: 'Lovely Souls Early Learning Hub',
-          address: '123 Primary Street, Vanderbijlpark, Gauteng',
-          phone: '+27 11 987 6543',
-          capacity: 45,
-          image_url: 'https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&q=80&w=800',
-          monthly_fee: 2500,
-          registration_fee: 500,
-          age_group: '18 Months - 6 Years',
-          description:
-            'Lovely Souls Early Learning Hub provides a safe, engaging, and structured environment for toddlers and preschoolers. Our curriculum covers literacy, numeracy, creative arts, and foundational motor development with certified staff.',
-        });
-      }
-
-      // Fetch Reviews
-      const { data: reviewData } = await supabase
-        .from('reviews')
-        .select('*')
-        .eq('center_id', centerId)
+        .eq('center_id', centerData.id)
         .order('created_at', { ascending: false });
 
-      if (reviewData) {
-        setReviews(reviewData as Review[]);
+      if (inquiryData) setInquiries(inquiryData);
+    }
+    setLoading(false);
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    try {
+      setUploading(true);
+      setMessage('');
+
+      if (!e.target.files || e.target.files.length === 0) {
+        return;
       }
 
-      setLoading(false);
+      const file = e.target.files[0];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${center?.id || 'center'}-${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // Upload file to Supabase Storage bucket
+      const { error: uploadError } = await supabase.storage
+        .from('center-photos')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('center-photos')
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      // Update database record
+      if (center) {
+        const { error: updateError } = await supabase
+          .from('centers')
+          .update({ image_url: publicUrl })
+          .eq('id', center.id);
+
+        if (updateError) throw updateError;
+
+        setCenter({ ...center, image_url: publicUrl });
+        setMessage('Photo uploaded and profile updated successfully!');
+      }
+    } catch (err: any) {
+      setMessage(`Upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
     }
+  }
 
-    fetchData();
-  }, [centerId]);
-
-  const handleSubmitInquiry = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmittingInquiry(true);
-    setInquiryStatus(null);
-
-    const { error } = await supabase.from('inquiries').insert([
-      {
-        center_id: center?.id,
-        parent_name: parentName,
-        email,
-        phone,
-        message,
-        status: 'pending',
-      },
-    ]);
-
-    setSubmittingInquiry(false);
-
-    if (error) {
-      setInquiryStatus({ type: 'error', text: 'Failed to submit inquiry. Please try again.' });
-    } else {
-      setInquiryStatus({ type: 'success', text: 'Inquiry submitted successfully!' });
-      setParentName('');
-      setEmail('');
-      setPhone('');
-      setMessage('');
-    }
-  };
-
-  const handleSubmitReview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmittingReview(true);
-
-    const newReview = {
-      center_id: center?.id,
-      parent_name: reviewerName,
-      rating,
-      comment,
-    };
-
-    const { data, error } = await supabase.from('reviews').insert([newReview]).select();
-
-    setSubmittingReview(false);
-
-    if (!error && data) {
-      setReviews([data[0] as Review, ...reviews]);
-      setReviewerName('');
-      setComment('');
-      setRating(5);
-    }
-  };
+  async function updateInquiryStatus(id: string, newStatus: string) {
+    await supabase.from('inquiries').update({ status: newStatus }).eq('id', id);
+    setInquiries(
+      inquiries.map((inq) => (inq.id === id ? { ...inq, status: newStatus } : inq))
+    );
+  }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-        <Navbar />
-        <div className="py-20 text-center text-slate-500">Loading center details...</div>
-        <Footer />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-sm font-semibold text-slate-600">Loading Dashboard...</p>
       </div>
     );
   }
 
-  if (!center) return null;
-
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-      <div>
-        <Navbar />
-
-        <div className="max-w-7xl mx-auto px-6 pt-6">
-          <Link href="/" className="text-sm font-semibold text-blue-600 hover:underline flex items-center gap-1">
-            ← Back to all centers
-          </Link>
+    <div className="min-h-screen bg-slate-50 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">Owner Dashboard</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Manage your center profile, photo uploads, and parent inquiries.
+          </p>
         </div>
 
-        <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Center Media, Info, Fees & Reviews */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Gallery / Hero Photo */}
-            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        {message && (
+          <div className="p-4 bg-blue-50 border border-blue-200 text-blue-800 text-xs rounded-xl font-medium">
+            {message}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Left Column: Center Media & Settings */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6">
+            <h2 className="text-base font-bold text-slate-900">Center Media & Photo</h2>
+
+            {/* Current Image Preview */}
+            <div className="relative h-48 w-full bg-slate-100 rounded-xl overflow-hidden border border-slate-200">
               <img
-                src={center.image_url || 'https://images.unsplash.com/photo-1587654780291-39c9404d746b?auto=format&fit=crop&q=80&w=800'}
-                alt={center.name}
-                className="w-full h-80 object-cover"
+                src={center?.image_url || 'https://images.unsplash.com/photo-1576495199011-eb94736d05d6?q=80&w=1200'}
+                alt={center?.name || 'Center photo'}
+                className="w-full h-full object-cover"
               />
-              <div className="p-8">
-                <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
-                  Accredited Hub
-                </span>
-                <h1 className="text-3xl font-extrabold text-slate-900 mt-3 mb-2">{center.name}</h1>
-                <p className="text-sm text-slate-500 mb-6">📍 {center.address}</p>
+            </div>
 
-                {/* Fee Structure Section */}
-                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  <div>
-                    <span className="text-xs text-blue-600 font-semibold uppercase">Monthly Tuition</span>
-                    <p className="text-xl font-bold text-slate-900 mt-0.5">R{center.monthly_fee ?? 2500}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-blue-600 font-semibold uppercase">Registration Fee</span>
-                    <p className="text-xl font-bold text-slate-900 mt-0.5">R{center.registration_fee ?? 500}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-blue-600 font-semibold uppercase">Age Range</span>
-                    <p className="text-sm font-bold text-slate-900 mt-1">{center.age_group ?? '18m - 6 yrs'}</p>
-                  </div>
-                </div>
+            {/* Upload Control */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-2">
+                Upload New Profile Photo
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={uploading}
+                className="block w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+              />
+              {uploading && (
+                <p className="text-xs text-blue-600 font-medium mt-2">Uploading image to storage...</p>
+              )}
+            </div>
 
-                <h2 className="text-lg font-bold text-slate-900 mb-2">About Our Program</h2>
-                <p className="text-slate-600 text-sm leading-relaxed mb-6">{center.description}</p>
+            <hr className="border-slate-100" />
+
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">{center?.name}</h3>
+              <p className="text-xs text-slate-500">{center?.address}</p>
+              <div className="mt-3 text-xs text-slate-600 space-y-1">
+                <p><strong>Monthly Fee:</strong> R{center?.monthly_fee ?? 2500}</p>
+                <p><strong>Registration Fee:</strong> R{center?.registration_fee ?? 500}</p>
+                <p><strong>Age Group:</strong> {center?.age_group ?? '18m - 6 yrs'}</p>
               </div>
             </div>
+          </div>
 
-            {/* Parent Reviews Section */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-900 mb-4">Parent Reviews & Feedback</h2>
+          {/* Right Column: Inquiry Management Pipeline */}
+          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900 mb-4">
+              Parent Inquiries ({inquiries.length})
+            </h2>
 
-              {/* Review Form */}
-              <form onSubmit={handleSubmitReview} className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-8 space-y-3">
-                <h3 className="text-sm font-bold text-slate-800">Leave a Review</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="Your Name"
-                    value={reviewerName}
-                    onChange={(e) => setReviewerName(e.target.value)}
-                    className="border border-slate-300 rounded-lg p-2 text-sm"
-                    required
-                  />
-                  <select
-                    value={rating}
-                    onChange={(e) => setRating(Number(e.target.value))}
-                    className="border border-slate-300 rounded-lg p-2 text-sm bg-white"
+            {inquiries.length === 0 ? (
+              <p className="text-xs text-slate-500 italic">No inquiries received yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {inquiries.map((inq) => (
+                  <div
+                    key={inq.id}
+                    className="p-4 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3"
                   >
-                    <option value={5}>⭐⭐⭐⭐⭐ (5 Stars)</option>
-                    <option value={4}>⭐⭐⭐⭐ (4 Stars)</option>
-                    <option value={3}>⭐⭐⭐ (3 Stars)</option>
-                    <option value={2}>⭐⭐ (2 Stars)</option>
-                    <option value={1}>⭐ (1 Star)</option>
-                  </select>
-                </div>
-                <textarea
-                  rows={2}
-                  placeholder="Share your experience with this daycare..."
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                  required
-                />
-                <button
-                  type="submit"
-                  disabled={submittingReview}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs px-4 py-2 rounded-lg transition-colors"
-                >
-                  {submittingReview ? 'Submitting...' : 'Post Review'}
-                </button>
-              </form>
-
-              {/* Reviews List */}
-              {reviews.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-4">No reviews submitted yet. Be the first to leave feedback!</p>
-              ) : (
-                <div className="space-y-4">
-                  {reviews.map((rev) => (
-                    <div key={rev.id} className="border-b border-slate-100 pb-4">
-                      <div className="flex justify-between items-center mb-1">
-                        <strong className="text-sm text-slate-900">{rev.parent_name}</strong>
-                        <span className="text-amber-500 text-xs font-bold">
-                          {'★'.repeat(rev.rating)}
-                        </span>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900">{inq.parent_name}</h4>
+                        <p className="text-xs text-slate-500">
+                          {inq.email} • {inq.phone}
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-600">"{rev.comment}"</p>
+                      <select
+                        value={inq.status || 'pending'}
+                        onChange={(e) => updateInquiryStatus(inq.id, e.target.value)}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="enrolled">Enrolled</option>
+                      </select>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
+                    <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200">
+                      "{inq.message}"
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-
-          {/* Right Column: Inquiry Sidebar Form */}
-          <div className="lg:col-span-1">
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-24">
-              <h2 className="text-xl font-bold text-slate-900 mb-1">Inquire for Admission</h2>
-              <p className="text-xs text-slate-500 mb-6">Send a message directly to {center.name}.</p>
-
-              {inquiryStatus && (
-                <div
-                  className={`p-3 rounded-lg text-xs mb-4 ${
-                    inquiryStatus.type === 'success'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-red-50 text-red-700 border border-red-200'
-                  }`}
-                >
-                  {inquiryStatus.text}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmitInquiry} className="flex flex-col gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Parent Name</label>
-                  <input
-                    type="text"
-                    value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900"
-                    placeholder="Jane Doe"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900"
-                    placeholder="jane@example.com"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900"
-                    placeholder="+27 82 123 4567"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 uppercase mb-1">Message</label>
-                  <textarea
-                    rows={3}
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2.5 text-sm text-slate-900"
-                    placeholder="Inquiring about open spots..."
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submittingInquiry}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
-                >
-                  {submittingInquiry ? 'Submitting...' : 'Send Inquiry'}
-                </button>
-              </form>
-            </div>
-          </div>
-        </main>
+        </div>
       </div>
-
-      <Footer />
     </div>
   );
 }
